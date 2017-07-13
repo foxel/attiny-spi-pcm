@@ -31,11 +31,11 @@ uint8_t EEMEM eemem_resets_count;
 
 int main(void)
 {
-	if ((MCUSR >> BORF) & 0x01 == 1) {
+	if (((MCUSR >> BORF) & 0x01) == 1) {
 		MCUSR = 0;
 		set_sleep_mode(SLEEP_MODE_PWR_DOWN);
 		sleep_mode();
-		return;
+		return 0;
 	}
 	
 	setup_seed();
