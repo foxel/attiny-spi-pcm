@@ -5,7 +5,7 @@
  *  Author: Foxel
  */ 
 
-#define F_CPU 4800000UL
+//#define F_CPU 4800000UL
 //#define LAST_TRACK_HIDDEN_COUNT 7
 
 #include <avr/io.h>
@@ -13,17 +13,17 @@
 #include <avr/interrupt.h>
 #include <avr/sleep.h>
 #include <avr/eeprom.h>
-#include <stdlib.h>
 
 #define PCM_width       2
 
 void init(void);
 void sleep(void);
 void start_pcm(void);
-void setup_seed(void);
+void setup_rand(void);
 
 unsigned char sample_count = PCM_width;
 unsigned char pcmBuffer = 0x00;
+unsigned int rand = 0x00;
 
 #ifdef LAST_TRACK_HIDDEN_COUNT
 uint8_t EEMEM eemem_resets_count;
@@ -32,24 +32,23 @@ uint8_t EEMEM eemem_resets_count;
 int main(void)
 {
 	if (((MCUSR >> BORF) & 0x01) == 1) {
+		// if the chip was reset by BOD
 		MCUSR = 0;
 		set_sleep_mode(SLEEP_MODE_PWR_DOWN);
 		sleep_mode();
 		return 0;
 	}
 	
-	setup_seed();
+	setup_rand();
 	spi_init();
 	init();
 	
 	start_pcm();
 	pcmBuffer = spi_receive();
 
-	//sleep();
-
 	sei();
 
-	while(1);
+	while(1) {}
 }
 
 ISR(TIM0_OVF_vect)
@@ -65,7 +64,6 @@ ISR(TIM0_OVF_vect)
 		pcmBuffer = spi_receive();
 		if (pcmBuffer == 0xff) {
 			sleep();
-			start_pcm();
 		}
 	}
 	sei();
@@ -111,10 +109,10 @@ void start_pcm(void) {
 			pos = tracks_count;
 		} else {
 			// else the one of non-hidden tracks is seleted randomly
-			pos = rand() % tracks_count;
+			pos = rand % tracks_count;
 		}
 		#else
-		pos = rand() % tracks_count;
+		pos = rand % tracks_count;
 		#endif
 		
 		while (pos > 0) {
@@ -144,10 +142,9 @@ void sleep(void) {
 	
 	spi_stop();
 	DDRB = 0x00;
-	PORTB |= 0x10;
-	
 	//DDRB = 0x10;
-	//PORTB = 0x10;
+	//PORTB = 0x10; // this is needed if there is no pull-up on memory IC CS pin
+	
 	TIMSK0 = 0x00;
 	TCCR0A = 0x00;
 	TCCR0B = 0x00;
@@ -156,31 +153,31 @@ void sleep(void) {
 	set_sleep_mode(SLEEP_MODE_PWR_DOWN);
 	//sleep_bod_disable();
 	sleep_mode();
-	init();
 }
 
-void setup_seed(void)
+void setup_rand(void)
 {
-	unsigned char oldADMUX = ADMUX;
-	ADMUX |=  _BV(MUX0); //choose ADC2 on PB4
-	ADCSRA |= _BV(ADPS2) |_BV(ADPS1) |_BV(ADPS0); //set prescaler to max value, 128
+	ADMUX  |= _BV(MUX0); //choose ADC2 on PB4
+	ADCSRA |= _BV(ADPS2) | _BV(ADPS1) | _BV(ADPS0); //set prescaler to max value, 128
 	
 	ADCSRA |= _BV(ADEN); //enable the ADC
-	ADCSRA |= _BV(ADSC);//start conversion
+	ADCSRA |= _BV(ADSC); //start conversion
 	
-	while (ADCSRA & _BV(ADSC)); //wait until the hardware clears the flag. Note semicolon!
+	while (ADCSRA & _BV(ADSC)) {
+		//wait until the hardware clears the flag
+	} 
 	
-	unsigned int seed = ADCL;
+	rand = ADCL;
 	
-	ADCSRA |= _BV(ADSC);//start conversion
+	ADCSRA |= _BV(ADSC); //start conversion again
 	
-	while (ADCSRA & _BV(ADSC)); //wait again note semicolon!
+	while (ADCSRA & _BV(ADSC)) {
+		//wait again
+	}
 	
-	seed = (seed << 8) + ADCL;
-		
-	srand(seed);
+	rand = (rand << 8) + ADCL;
 	
 	ADCSRA &= ~_BV(ADEN); //disable ADC
 
-	ADMUX = oldADMUX;
+	ADMUX = 0;
 }
